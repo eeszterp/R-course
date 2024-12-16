@@ -196,6 +196,7 @@ kable(child_proportions_rounded)
 Checking the proportions of the categories in the variables tells us a lot about the data: there are significantly more male (73%) than female (24%) respondents. Most of the sample falls into the age group of 25-34 years old (52%), while the second largest group is 35-44 years olds (24%), and people younger than 24 and older than 45 are less represented in the data (11% and 13% respectively). Most respondents are employed (86%). The majority of the respondents do not have any children (75%), while 20% have 1 or 2 children and 4% have 3 or more children. 
 
 # Creating visualisations 
+### Gender and total spending on coffee
 ```{r}
 ## 1. Gender by total spending on coffee
 # Calculating proportions for each gender category within each spending category
@@ -226,7 +227,12 @@ ggplot(gender_spending_proportions, aes(x = totalspending_new, y = proportion, f
     y = "Gender (%)",
     fill = "Gender"
   )
+```
 
+The first bar chart shows that there is a bit of a higher proportion of women (28%) in the lowest spending group ($0-$40) compared to the other two spending groups that are 21% ($40-$80) and 22% ($80+).
+
+### Age and total spending on coffee 
+```{r} 
 ## 2. Age and total spending on coffee
 # Calculating proportions for each age group within each spending category
 age_spending_proportions <- coffee_subset_filtered %>%
@@ -252,7 +258,12 @@ ggplot(age_spending_proportions, aes(x = totalspending_new, y = proportion, fill
     x = "Total average spending",
     y = "Age groups (%)"
   )
+```
 
+In the second bar chart, it is visible that the biggest age group in the data is 25-34 years olds and most of this age group spends between $0-$40 and $40-$80 a month on coffee. Older age groups are slightly more represented in the $80 spending group - 15% for 45+ year olds and 33% for 35-44 year olds.
+
+### Employment and spending on coffee 
+```{r} 
 ## 3. Employment 
 # Calculating proportions for employment category within each spending category
 emp_spending_proportions <- coffee_subset_filtered %>%
@@ -279,7 +290,12 @@ ggplot(emp_spending_proportions, aes(x = totalspending_new, y = proportion, fill
     x = "Total average spending",
     y = "Employment status (%)"
   )
+```
 
+This bar chart shows that those that are unemployed are more represented in the lowest spending group of 0 to 40 US dollars per month with 17% as opposed to 8% in the highest spending group of 80+ US dollars. 
+
+### Number of children and spending on coffee
+```{r}
 ## 4. Number of children
 # Calculating proportions for the number of children within each spending category
 child_spending_proportions <- coffee_subset_filtered %>%
@@ -306,7 +322,12 @@ ggplot(child_spending_proportions, aes(x = totalspending_new, y = proportion, fi
     x = "Total average spending",
     y = "Number of children (%)"
   )
+```
 
+Based on this bar chart, it seems that people who have children (1, 2 or 3 or more children) are more represented in the highest spending group of 80+ US dollars (26% for 1 or 2 children and 6% for 3 or more children), than the lowest spending group (19% for 1-2 children and 4% for 3 or more children). 
+
+### Cups of coffee per day and number of children 
+```{r}
 ## Another interesting visualisation: cups of coffee and children 
 # In this visualisation I will explore the trends of drinking coffee by the number of children
 
@@ -343,6 +364,8 @@ ggplot(cups_proportions, aes(x = cups_new, y = proportion, fill = child_new)) +
     y = "Number of children (%)"
   )
 ```
+
+The bar plot shows a trend of people drinking more cups of coffee per day if they have children. A significant majority (81%) of people consuming 1 or less cup of coffee per day have no children, while this decreases to 62% in the group that drinks 4 or more cups a day and the percentage increases for people who have children. Thus, the number of cups of coffee increases as the number of children increases, suggesting there may be a link between the demands of being a parent and coffee consumption. 
 
 # Model diagnostics
 ```{r}
