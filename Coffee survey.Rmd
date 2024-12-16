@@ -19,11 +19,15 @@ The data was gained from the "Great American Coffee Taste Test", which was a tes
 In this project, I will explore the associations between the typical spendings on coffee in a month and age, gender, the number of children and employment status. 
 
 The simple model will have the outcome variable of total average monthly spending on coffee and 2 predictors: 
+
 - age 
+
 - gender
 
 The complex model will have two additional predictors in addition to age and gender: 
+
 - employment status
+
 - number of children 
 
 My hypothesis is that the complex model explains the outcome variable better, thus employment status (being employed) and the number of children (having more children) explains the outcome variable better. 
