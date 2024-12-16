@@ -1,0 +1,557 @@
+
+---
+title: "Final project: Based on the coffee_survey data (tidytuesday)"
+author: "Eszter Palócz"
+output: html_document
+date: "2024-12-16"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The data and hypothesis
+The dataset used for this project is the Coffee Survey data from Tidy Tuesday (from 2024/05/14). 
+The data was gained from the "Great American Coffee Taste Test", which was a test on YouTube by James Hoffmann (world champion barista) and coffee company Cometeer. The test was conducted among American YouTube viewers who ordered coffees from Cometeer for the tasting. 
+
+In this project, I will explore the associations between the typical spendings on coffee in a month and age, gender, the number of children and employment status. 
+
+The simple model will have the outcome variable of total average monthly spending on coffee and 2 predictors: 
+- age 
+- gender
+
+The complex model will have two additional predictors in addition to age and gender: 
+- employment status
+- number of children 
+
+My hypothesis is that the complex model explains the outcome variable better, thus employment status (being employed) and the number of children (having more children) explains the outcome variable better. 
+
+## Setup
+### Loading packages 
+```{r}
+library(tidytuesdayR)
+library(tidyverse)
+library(dplyr)
+library(knitr)
+library(MASS)
+library(brant)
+library(car)
+library(nnet)
+```
+
+### Reading the data 
+```{r}
+# Reading the data 
+tuesdata <- tidytuesdayR::tt_load('2024-05-14')
+coffee_survey <- tuesdata$coffee_survey
+```
+
+### Checking the data 
+```{r}
+# Checking the structure of the data 
+str(coffee_survey)
+
+# Checking the first and last rows of the data 
+head(coffee_survey)
+tail(coffee_survey)
+
+# Checking missing values
+## Checking for missing values in the whole dataset and the columns
+sum(is.na(coffee_survey))
+colSums(is.na(coffee_survey))
+
+## Checking the percentage of missing values per variable that is relevant for the research question
+mean(is.na(coffee_survey$total_spend)) * 100
+mean(is.na(coffee_survey$age)) * 100
+mean(is.na(coffee_survey$gender)) * 100
+mean(is.na(coffee_survey$employment_status)) * 100
+mean(is.na(coffee_survey$number_children)) * 100
+```
+
+There are between 0.7% (age) to 16% (number of children) of missing variables. 
+
+## Manipulating the data and variables
+```{r}
+# Creating a subset of the data for the analysis
+coffee_subset <- coffee_survey %>%
+  dplyr::select(total_spend, cups, age, gender, education_level, employment_status, number_children)
+
+## Checking the coffee_subset data 
+head(coffee_subset)
+str(coffee_subset)
+```
+
+```{r}
+# Manipulating the data and variables
+## Excluding missing data
+coffee_subset_clean <- coffee_subset %>%
+  filter(!if_any(c(total_spend, cups, age, gender, employment_status, number_children), is.na)) 
+
+## Checking the new dataset and variables
+head(coffee_subset_clean)
+
+## Manipulating variables for the analysis (regrouping and creating factors)
+coffee_subset_filtered <- coffee_subset_clean %>%
+  
+  ## 1. Dependent variable: total_spend (total amount spent on coffee on average per month)
+  # Creating new groups for total_spend: $0-$40, $40-$80, $80+ and transforming to factor
+  mutate(totalspending_new = case_when(
+    total_spend %in% c("<$20", "$20-$40") ~ "$0-$40",
+    total_spend %in% c("$40-$60", "$60-$80") ~ "$40-$80",
+    total_spend %in% c("$80-$100", ">$100") ~ "$80+", 
+    TRUE ~ as.character(total_spend, levels = "$0-$40", "$40-$80", "$80+")  
+  )) %>%
+  mutate(totalspending_new = factor(totalspending_new, levels = c("$0-$40", "$40-$80", "$80+"))) %>%
+
+  ## Predictor variable 1. Gender
+  # Excluding values with a very low count and transforming to factor
+  filter(!gender %in% c("Other (please specify)", "Prefer not to say")) %>%
+  mutate(gender = factor(gender, levels = c("Male", "Female", "Non-binary"))) %>%
+
+  ## Predictor variable 2. Age 
+  # Creating new groups for age variable: <18-24 years old, 25-34 years old, 35-44 years old, 45+ years old and transforming to factor 
+  mutate(age_newgroup = case_when(
+    age %in% c("<18 years old", "18-24 years old") ~ "<18-24 years old",
+    age %in% c("45-54 years old", "55-64 years old", ">65 years old") ~ "45+ years old",
+    TRUE ~ as.character(age)  
+  )) %>%
+  mutate(age_newgroup = factor(age_newgroup, levels = c(levels = "<18-24 years old", "25-34 years old", "35-44 years old", "45+ years old"))) %>%
+
+  ## Predictor variable 3. Employment status
+  # Creating new groups for Employment status: Employed, Not employed and transforming to factor 
+  mutate(employment_new = case_when(
+    employment_status %in% c("Employed full-time", "Employed part-time") ~ "Employed",
+    employment_status %in% c("Homemaker", "Retired", "Student", "Unemployed") ~ "Not employed",
+    TRUE ~ as.character(employment_status)  
+  )) %>%
+  mutate(employment_new = factor(employment_new, levels = c("Employed", "Not employed"))) %>%
+
+  ## Predictor variable 4. Number of children 
+  # Creating new groups for Number of children: None, 1-2, 3 or more and transforming to factor
+  mutate(child_new = case_when(
+    number_children %in% c("1", "2") ~ "1-2",
+    number_children %in% c("3", "More than 3") ~ "3 or more",
+    TRUE ~ as.character(number_children)
+  )) %>%
+  mutate(child_new = factor(child_new, levels = c("None", "1-2", "3 or more"))) %>%
+
+## Cups - new categories
+  mutate(cups_new = case_when(
+    cups %in% c("1", "Less than 1") ~ "1 or less", 
+    cups %in% c("4", "More than 4") ~ "4 or more", 
+    TRUE ~ as.character(cups)
+  )) %>% 
+  mutate(cups_new = factor(cups_new, levels = c("1 or less", "2", "3", "4 or more")))
+
+## Checking levels of the new variables to ensure they were created successfully
+levels(coffee_subset_filtered$totalspending_new)
+levels(coffee_subset_filtered$gender)
+levels(coffee_subset_filtered$age_newgroup)
+levels(coffee_subset_filtered$employment_new)
+levels(coffee_subset_filtered$child_new)
+levels(coffee_subset_filtered$cups_new)
+```
+
+The levels were created successfully: 
+Total spending (3 levels: "$0-$40"  "$40-$80" "$80+" 
+Gender (3 levels): "Female" "Male" "Non-binary"
+Age (4 levels): "<18-24 years old" "25-34 years old"  "35-44 years old"  "45+ years old"   
+Employment status (2 levels): "Employed" "Not employed"
+Number of children (3 levels): "1-2" 3 or more" "None"   
+Cups (4 levels): "1 or less", "2", "3", "4 or more"
+
+### Calculating proportions 
+```{r}
+## Gender proportions
+gender_counts <- table(coffee_subset_filtered$gender)
+gender_proportions <- prop.table(gender_counts) * 100
+gender_proportions_rounded <- round(gender_proportions, 0)
+kable(gender_proportions_rounded)
+
+## Age proportions 
+age_counts <- table(coffee_subset_filtered$age_newgroup)
+age_proportions <- prop.table(age_counts) * 100
+age_proportions_rounded <- round(age_proportions, 0)
+kable(age_proportions_rounded)
+
+## Employment
+emp_counts <- table(coffee_subset_filtered$employment_new)
+emp_proportions <- prop.table(emp_counts) * 100
+emp_proportions_rounded <- round(emp_proportions, 0)
+kable(emp_proportions_rounded)
+
+## Number of children
+child_counts <- table(coffee_subset_filtered$child_new)
+child_proportions <- prop.table(child_counts) * 100
+child_proportions_rounded <- round(child_proportions, )
+kable(child_proportions_rounded)
+```
+
+Checking the proportions of the categories in the variables tells us a lot about the data: there are significantly more male (73%) than female (24%) respondents. Most of the sample falls into the age group of 25-34 years old (52%), while the second largest group is 35-44 years olds (24%), and people younger than 24 and older than 45 are less represented in the data (11% and 13% respectively). Most respondents are employed (86%). The majority of the respondents do not have any children (75%), while 20% have 1 or 2 children and 4% have 3 or more children. 
+
+# Creating visualisations 
+```{r}
+## 1. Gender by total spending on coffee
+# Calculating proportions for each gender category within each spending category
+gender_spending_proportions <- coffee_subset_filtered %>%
+  group_by(totalspending_new, gender) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(totalspending_new) %>%
+  mutate(proportion = (count / sum(count)) * 100) %>%
+  mutate(gender = factor(gender, levels = rev(c("Male", "Female", "Non-binary"))))
+  
+# Bar chart Gender x total spending
+library(ggplot2)
+library(viridis)
+ggplot(gender_spending_proportions, aes(x = totalspending_new, y = proportion, fill = gender)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = ifelse(proportion > 0, paste0(round(proportion), "%"), "")), 
+            position = position_stack(vjust = 0.5), 
+            size = 3.5, color = "white") +
+  scale_fill_viridis(
+    breaks = c("Male", "Female", "Non-binary"), 
+    discrete = TRUE) +
+  coord_flip() +
+  theme_minimal() +
+  guides(fill = guide_legend(title = NULL)) +
+  labs(
+    title = "Average monthly spending on coffee by gender",
+    x = "Total average spending",
+    y = "Gender (%)",
+    fill = "Gender"
+  )
+
+## 2. Age and total spending on coffee
+# Calculating proportions for each age group within each spending category
+age_spending_proportions <- coffee_subset_filtered %>%
+  group_by(totalspending_new, age_newgroup) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(totalspending_new) %>%
+  mutate(proportion = (count / sum(count)) * 100)
+
+# Bar chart Age x Total spending
+ggplot(age_spending_proportions, aes(x = totalspending_new, y = proportion, fill = age_newgroup)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = ifelse(proportion > 0, paste0(round(proportion), "%"), "")), 
+            position = position_stack(vjust = 0.5), 
+            size = 3.5, color = "white") +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_viridis(
+    breaks = c("45+ years old", "35-44 years old", "25-34 years old", "<18-24 years old"), 
+    discrete = TRUE) +
+  guides(fill = guide_legend(title = NULL)) +
+  labs(
+    title = "Average monthly spending on coffee by age group",
+    x = "Total average spending",
+    y = "Age groups (%)"
+  )
+
+## 3. Employment 
+# Calculating proportions for employment category within each spending category
+emp_spending_proportions <- coffee_subset_filtered %>%
+  group_by(totalspending_new, employment_new) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(totalspending_new) %>%
+  mutate(proportion = (count / sum(count)) * 100) %>% 
+  mutate(employment_new = factor(employment_new, levels = rev(c("Employed", "Not employed"))))
+
+# Bar chart for employment x total spending
+ggplot(emp_spending_proportions, aes(x = totalspending_new, y = proportion, fill = employment_new)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = ifelse(proportion > 0, paste0(round(proportion), "%"), "")), 
+            position = position_stack(vjust = 0.5), 
+            size = 3.5, color = "white") +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_viridis(
+    breaks = c("Employed", "Not employed"), 
+    discrete = TRUE) +
+  guides(fill = guide_legend(title = NULL)) +
+  labs(
+    title = "Employment and monthly average spending on coffee",
+    x = "Total average spending",
+    y = "Employment status (%)"
+  )
+
+## 4. Number of children
+# Calculating proportions for the number of children within each spending category
+child_spending_proportions <- coffee_subset_filtered %>%
+  group_by(totalspending_new, child_new) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(totalspending_new) %>%
+  mutate(proportion = (count / sum(count)) * 100) %>%
+  mutate(child_new = factor(child_new, levels = rev(c("None", "1-2", "3 or more"))))
+
+# Bar chart for number of children x total spending 
+ggplot(child_spending_proportions, aes(x = totalspending_new, y = proportion, fill = child_new)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = ifelse(proportion > 0, paste0(round(proportion), "%"), "")), 
+            position = position_stack(vjust = 0.5), 
+            size = 3.5, color = "white") +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_viridis(
+    breaks = c("None", "1-2", "3 or more"), 
+    discrete = TRUE) +
+  guides(fill = guide_legend(title = NULL)) +
+  labs(
+    title = "Number of children and average monthly spending on coffee",
+    x = "Total average spending",
+    y = "Number of children (%)"
+  )
+
+## Another interesting visualisation: cups of coffee and children 
+# In this visualisation I will explore the trends of drinking coffee by the number of children
+
+## Creating a visualisation to see the trend in the number of cups of coffee and having children
+# Calculating proportions
+cups_proportions <- coffee_subset_filtered %>%
+  group_by(cups_new, child_new) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(cups_new) %>%
+  mutate(proportion = (count / sum(count)) * 100)
+
+# Changing the order of categories for better visibility 
+cups_proportions <- cups_proportions %>%
+  mutate(cups_new = factor(cups_new, levels = rev(c("1 or less", "2", "3", "4 or more"))))
+
+cups_proportions <- cups_proportions %>%
+  mutate(child_new = factor(child_new, levels = rev(c("None", "1-2", "3 or more"))))
+
+# Creating the bar chart 
+ggplot(cups_proportions, aes(x = cups_new, y = proportion, fill = child_new)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = ifelse(proportion > 0, paste0(round(proportion), "%"), "")), 
+            position = position_stack(vjust = 0.5), 
+            size = 3.5, color = "white") +
+  coord_flip() +
+  theme_minimal() +
+  scale_fill_viridis(
+    breaks = c("None", "1-2", "3 or more"), 
+    discrete = TRUE) +
+  guides(fill = guide_legend(title = NULL)) +
+  labs(
+    title = "Number of children and number of cups of coffee per day",
+    x = "Cups of coffee",
+    y = "Number of children (%)"
+  )
+```
+
+# Model diagnostics
+```{r}
+## Building and fitting the complex model: ordinal logistic regression where the outcome is total spending and the predictors are age, gender, educational level, employment, number of children
+
+# Ensuring 'total_spending' is an ordered factor
+coffee_subset_filtered$totalspending_new <- factor(coffee_subset_filtered$totalspending_new, 
+                                 levels = c("$0-$40", "$40-$80", "$80+"), 
+                                 ordered = TRUE)
+
+# Fitting the model
+ordinal_model <- polr(totalspending_new ~ age_newgroup + gender + employment_new + child_new, data = coffee_subset_filtered, Hess = TRUE)
+
+# Summary of the model
+summary(ordinal_model)
+```
+
+## Checking assumptions 
+### Proportional Odds Assumption
+```{r}
+# Performing Brant test
+brant_test <- brant(ordinal_model)
+kable(brant_test)
+```
+
+Based on the Brant test, the assumption is not met. 
+
+### Next assumption: Multicollinearity
+```{r}
+# Checking multicollinearity (GVIF)
+gvif_values_ordinal <- vif(ordinal_model)
+kable(gvif_values_ordinal)
+```
+
+There is no issue with multicollinearity in the model, since all values are within the acceptable limit of < 2. 
+
+Based on the results of the Brant test, the assumption of proportional odds is violated. Therefore, I will check if multinomial logistic regression model would be better for this model, since it is more flexible. The disadvantage of this model is that ordering of the outcome variable (total spending - $0-40, $40-$80, $80+) will not be considered. 
+
+
+## Multinomial regression model (complex model)
+```{r}
+# For this model, the dependent variable does not have to be ordered
+coffee_subset_filtered$totalspending_new <- factor(coffee_subset_filtered$totalspending_new, 
+                                 levels = c("$0-$40", "$40-$80", "$80+"), 
+                                 ordered = FALSE)
+
+# Fitting multinomial logistic regression model
+multinom_model <- multinom(totalspending_new ~ age_newgroup + gender + employment_new + child_new, data = coffee_subset_filtered)
+
+# Viewing the model summary
+summary(multinom_model)
+
+# Comparing the goodness of fit of the two models 
+kable(AIC(ordinal_model, multinom_model))
+kable(BIC(ordinal_model, multinom_model))
+```
+
+Even though based on AIC and BIC, the ordinal logistic model (complex_model) seems to be a slightly better fit, I will choose the multinomial logistic model (multinom_model) because the proportional odds assumption was violated and the multinomial logistic regression model does not need that assumption to be met. 
+
+### Checking assumptions for the multinomial logistic regression model
+Based on looking at the dataset, there might be a slight issue with the outcome variable, because it is not clear whether the categories overlap or not between for example $0-40 and $40-$60. However, for the purpose of this project, I will assume that the categories do not overlap and the categories are mutually exclusive and exhaustive. 
+
+In addition, since there are no continuous variables, the assumptions related to continuous variables will be skipped (linearity, outliers). 
+```{r}
+# Checking multicollinearity 
+gvif_values_complex <- vif(multinom_model)
+kable(gvif_values_complex)
+```
+The assumption of multicollinearity is met (all values under 5).
+
+## Simple model: total spending ~ age, gender 
+```{r}
+# Building the model 
+simple_model <- multinom(totalspending_new ~ age_newgroup + gender, data = coffee_subset_filtered)
+
+# Checking the model summary
+summary(simple_model)
+```
+
+### Checking assumptions for the simple model
+(The above description about assumptions also applies for the simple model.)
+```{r}
+# Checking multicollinearity 
+gvif_values_simple <- vif(simple_model)
+kable(gvif_values_simple)
+```
+
+The multicollinearity assumption is met. (VIF<5)
+
+# Comparing the simple and complex models 
+```{r}
+## Likelihood ratio test 
+kable(anova(multinom_model, simple_model, test = "Chisq"))
+
+## Model summary comparison
+summary(multinom_model)
+summary(simple_model)
+
+# Comparing AIC values 
+kable(AIC(multinom_model, simple_model))
+```
+
+### Creating readable tables for the simple and complex multinomial logistic regression models
+```{r} 
+## Creating a readable table for the summary of the simple model
+# Extracting coefficients and standard errors
+coefficients_simple <- summary(simple_model)$coefficients
+std_errors_simple <- summary(simple_model)$standard.errors
+
+# Calculating z-values and p-values
+z_values_simple <- coefficients_simple / std_errors_simple
+p_values_simple <- 2 * (1 - pnorm(abs(z_values_simple)))
+
+# Combining results into a single data frame
+results_simple <- as.data.frame(coefficients_simple) %>%
+  rownames_to_column(var = "Outcome") %>%
+  pivot_longer(
+    cols = -Outcome,
+    names_to = "Predictor",
+    values_to = "Coefficient"
+  ) %>%
+  mutate(
+    Std_Error = as.vector(t(std_errors_simple)),
+    z_value = Coefficient / Std_Error,
+    p_value = 2 * (1 - pnorm(abs(z_value)))
+  )
+
+# Reshaping for better readability
+final_table_simple <- results_simple %>%
+  pivot_wider(
+    names_from = Outcome,
+    values_from = c(Coefficient, Std_Error, z_value, p_value)
+  )
+
+# Cleaning column names
+colnames(final_table_simple) <- gsub("_", " ", colnames(final_table_simple))
+
+# Displaying the table
+kable(
+  final_table_simple, 
+  digits = 3, 
+  caption = "Simple Model Results (Multinomial Logistic Regression)"
+)
+
+## Creating a table for the summary of the complex multinomial model
+# Extracting coefficients and standard errors
+coefficients <- summary(multinom_model)$coefficients
+std_errors <- summary(multinom_model)$standard.errors
+
+# Calculating z-values and p-values
+z_values <- coefficients / std_errors
+p_values <- 2 * (1 - pnorm(abs(z_values)))
+
+# Combining results into a single data frame
+results <- as.data.frame(coefficients) %>%
+  rownames_to_column(var = "Outcome") %>%
+  pivot_longer(
+    cols = -Outcome,
+    names_to = "Predictor",
+    values_to = "Coefficient"
+  ) %>%
+  mutate(
+    Std_Error = as.vector(t(std_errors)),
+    z_value = Coefficient / Std_Error,
+    p_value = 2 * (1 - pnorm(abs(z_value)))
+  )
+
+# Reshaping for better readability
+final_table <- results %>%
+  pivot_wider(
+    names_from = Outcome,
+    values_from = c(Coefficient, Std_Error, z_value, p_value)
+  )
+
+# Cleaning column names
+colnames(final_table) <- gsub("_", " ", colnames(final_table))
+
+# The table
+kable(
+  final_table, 
+  digits = 3, 
+  caption = "Complex model results (Multinomial Logistic Regression)"
+)
+```
+
+__Interpretation of the results:__
+
+Based on the results of the AIC (simple model: 6012, complex model: 6008) and Likelihood ratio test, the complex model that includes the predictors of employment and number of children in addition to age and gender has a slightly better fit for to the data than the simple model. Therefore the predictors introduced in the complex model are valuable in explaining the differences in spending but the significance seems marginal. 
+
+_Age_
+
+Older age groups are associated with higher income categories in both models. The strongest effect is seen for the age group of 35-44 for the highest income category of $80+, thus this age group is likely spending the most money on coffee on average based on the models. The effect is maintained in the complex model. 
+
+_Gender_
+
+Female gender is associated with lower spending in both models (negative coefficients). 
+In the simple model, gender is statistically significant across both of the income categories ($40-$80, p = 0.000; $80+, p = 0.037) compared to the base category ($0-$40). However, non-binary category in gender was not significant in any of the spending categories (p = 0.169 and p = 0.487). 
+
+In the complex model, there is a weaker effect for the $80+ category for female gender (Coeff. = -0.245; p = 0.099). 
+
+_Employment_
+
+A new variable in the complex model is employment. The results suggest that those that are unemployed are less likely to fall into the highest ($80+) spending category (Coeff=-0.653; p = 0.003). However, the results were not significant for the category of $40-$80 (Coeff. = -0.068; p = 0.543). Thus, the employment status does not predict whether someone is less likely to spend between $40-$80 compared to $0-$40. 
+
+_Number of children_
+
+As to the number of children, having 1 or 2 and 3 or more children versus having no children do not have a statistically significant association with the average amount of money spent on coffee per month (1-2 group: Coeff = 0.183; p = 0.062; 3 or more group: Coeff = 0.179; p = 0.084). 
+
+__Conclusion__ 
+
+Overall, the complex model offers a bit better fit and gives a more nuanced explanation to understand what influences the coffee spending habits of the respondents. However, it must be noted that the data is not very balanced in the sense that males (71%), individuals without children (75%) and individuals in the age group of 25-34 year-olds (52%) were over-represented in the data. This is likely due to the audience of the YouTube channel that conducted the survey. Therefore the results should be interpreted with caution and keeping in mind that certain groups were over-represented. 
+
+
+***Reflection on working on this project***
+
+I used OpenAI ChatGPT for working on this project for generating codes and correcting mistakes in the codes when needed, while carefully checking the explanations and whether the generated code fits my purpose. It has been an immense help with the project, however I still found working on this project from scratch quite challenging. The biggest challenge was working with the type of the data and models that I do not have much experience with (ordinal logistic regression and multinomial logistic regression). In retrospect, choosing a dataset or topic that has more continuous variables would have been easier (wiser?) but all in all I learnt a lot from going through this analysis. 
